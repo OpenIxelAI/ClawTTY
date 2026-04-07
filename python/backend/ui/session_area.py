@@ -167,7 +167,7 @@ class SessionArea(ctk.CTkFrame):
     def open_session(self, profile: dict) -> str | None:
         import time
         # Debounce — ignore rapid repeated connects for same profile
-        profile_key = profile.get("id") or f"{profile.get('host')}:{profile.get('username')}"
+        profile_key = profile.get("id") or f"{profile.get('host')}:{profile.get('user')}"
         now = time.monotonic()
         last = self._last_open_time.get(profile_key, 0)
         if now - last < self._DEBOUNCE_S:

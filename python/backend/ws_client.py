@@ -233,7 +233,7 @@ class GatewayClient:
 
     # ── Public: connect / disconnect ──────────────────────────────────────────
 
-    def connect(self, url: str, token: str) -> bool:
+    def connect(self, url: str, token: str, auto_reconnect: bool = True) -> bool:
         """
         Connect to the gateway synchronously from the UI thread.
         Starts the async loop thread, performs handshake, returns True on success.
@@ -283,7 +283,9 @@ class GatewayClient:
             self._stop_event = asyncio.Event()
             try:
                 self._loop.run_until_complete(
-                    self._managed_connect_loop(url, token, handshake_event, result_holder)
+                    self._managed_connect_loop(
+                        url, token, handshake_event, result_holder, auto_reconnect
+                    )
                 )
             except Exception as exc:
                 _logger.exception("WebSocket thread error: %s", exc)
@@ -341,9 +343,7 @@ class GatewayClient:
     # ── Internal: state management ────────────────────────────────────────────
 
     def _set_state(self, state: ConnState) -> None:
-        import traceback as _tb
-        caller = _tb.extract_stack()[-2]
-        print(f"[WS_STATE] {self._state.value} → {state.value}  ({caller.filename.split('/')[-1]}:{caller.lineno})")
+        _logger.debug("WS state: %s -> %s", self._state.value, state.value)
         self._state = state
         for cb in self._state_callbacks:
             try:
@@ -396,6 +396,7 @@ class GatewayClient:
         token: str,
         handshake_event: threading.Event,
         result_holder: list,
+        auto_reconnect: bool,
     ) -> None:
         """
         Runs in the background thread's event loop.
@@ -416,6 +417,8 @@ class GatewayClient:
                 result_holder[0] = ok
                 handshake_event.set()
                 first_attempt = False
+                if (not ok) and (not auto_reconnect):
+                    break
 
             if self._stop_event.is_set():
                 break
@@ -591,7 +594,11 @@ class GatewayClient:
             async for raw in ws:
                 # Check stop
                 if self._stop_event.is_set():
-                    print(f"[WS] stop event set after {frame_count} frames, {int(_time.monotonic()-start)}s")
+                    _logger.debug(
+                        "WS stop after %s frames (%ss)",
+                        frame_count,
+                        int(_time.monotonic() - start),
+                    )
                     break
 
                 frame_count += 1
@@ -603,31 +610,51 @@ class GatewayClient:
                 try:
                     frame = json.loads(raw)
                 except json.JSONDecodeError:
-                    print(f"[WS] non-JSON frame, ignoring")
+                    _logger.debug("WS non-JSON frame ignored")
                     continue
 
                 try:
                     self._dispatch_frame(frame)
                 except Exception as exc:
-                    print(f"[WS] dispatch error (non-fatal): {exc}")
-                    import traceback
-                    traceback.print_exc()
+                    _logger.warning("WS dispatch error (non-fatal): %s", exc)
 
             # If we get here, the async-for ended normally (server closed)
-            print(f"[WS] async-for ended after {frame_count} frames, {int(_time.monotonic()-start)}s")
+            _logger.debug(
+                "WS receive loop ended after %s frames (%ss)",
+                frame_count,
+                int(_time.monotonic() - start),
+            )
 
         except websockets.exceptions.ConnectionClosedOK as exc:
-            print(f"[WS] connection closed OK: code={exc.code} reason={exc.reason} after {int(_time.monotonic()-start)}s")
+            _logger.debug(
+                "WS closed OK code=%s reason=%s after %ss",
+                exc.code,
+                exc.reason,
+                int(_time.monotonic() - start),
+            )
         except websockets.exceptions.ConnectionClosedError as exc:
-            print(f"[WS] connection closed ERROR: code={exc.code} reason={exc.reason} after {int(_time.monotonic()-start)}s")
+            _logger.warning(
+                "WS closed ERROR code=%s reason=%s after %ss",
+                exc.code,
+                exc.reason,
+                int(_time.monotonic() - start),
+            )
         except websockets.exceptions.ConnectionClosed as exc:
-            print(f"[WS] connection closed: code={exc.code} reason={exc.reason} after {int(_time.monotonic()-start)}s")
+            _logger.debug(
+                "WS closed code=%s reason=%s after %ss",
+                exc.code,
+                exc.reason,
+                int(_time.monotonic() - start),
+            )
         except Exception as exc:
-            print(f"[WS] receive loop error: {type(exc).__name__}: {exc} after {int(_time.monotonic()-start)}s")
-            import traceback
-            traceback.print_exc()
+            _logger.exception(
+                "WS receive loop error: %s: %s after %ss",
+                type(exc).__name__,
+                exc,
+                int(_time.monotonic() - start),
+            )
         finally:
-            print(f"[WS] receive loop exiting, total frames={frame_count}")
+            _logger.debug("WS receive loop exiting, frames=%s", frame_count)
             self._ws = None
 
     def _dispatch_frame(self, frame: dict) -> None:

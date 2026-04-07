@@ -24,37 +24,58 @@ export default function App() {
   const [terminalBuffers, setTerminalBuffers] = useState<Record<string, string>>({})
   const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({})
   const [status, setStatus] = useState<Record<string, ProfileStatus>>({})
+  const [error, setError] = useState<string | null>(null)
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId) ?? null, [tabs, activeTabId])
 
   const openProfile = async (profile: Profile) => {
-    const id = crypto.randomUUID()
-    setTabs((t) => [...t, { id, profileId: profile.id, name: profile.name, agent: profile.agent, type: profile.connection_type, createdAt: new Date().toISOString() }])
-    setActiveTabId(id)
-    setView('sessions')
-    if (profile.connection_type === 'ssh') {
-      const out = await sidecar.call<string>('session.ssh_open', { profileId: profile.id })
-      setTerminalBuffers((b) => ({ ...b, [id]: out }))
-    } else {
-      const history = await sidecar.call<ChatMessage[]>('session.ws_open', { profileId: profile.id })
-      setChatMessages((m) => ({ ...m, [id]: history }))
+    try {
+      setError(null)
+      const id = crypto.randomUUID()
+      setTabs((t) => [...t, { id, profileId: profile.id, name: profile.name, agent: profile.agent, type: profile.connection_type, createdAt: new Date().toISOString() }])
+      setActiveTabId(id)
+      setView('sessions')
+      if (profile.connection_type === 'ssh') {
+        const out = await sidecar.call<string>('session.ssh_open', { profileId: profile.id })
+        setTerminalBuffers((b) => ({ ...b, [id]: out }))
+      } else {
+        const history = await sidecar.call<ChatMessage[]>('session.ws_open', { profileId: profile.id })
+        setChatMessages((m) => ({ ...m, [id]: history }))
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to open profile session.')
     }
   }
 
   const saveProfile = async (profile: Profile) => {
-    await sidecar.call('profiles.save', { profile })
-    setDrawerOpen(false)
-    await refresh()
+    try {
+      setError(null)
+      await sidecar.call('profiles.save', { profile })
+      setDrawerOpen(false)
+      await refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save profile.')
+    }
   }
   const deleteProfile = async (id: string) => {
-    await sidecar.call('profiles.delete', { profileId: id })
-    setDrawerOpen(false)
-    await refresh()
+    try {
+      setError(null)
+      await sidecar.call('profiles.delete', { profileId: id })
+      setDrawerOpen(false)
+      await refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete profile.')
+    }
   }
 
   const refreshStatus = async () => {
-    const data = await sidecar.call<Record<string, ProfileStatus>>('status.refresh')
-    setStatus(data)
+    try {
+      setError(null)
+      const data = await sidecar.call<Record<string, ProfileStatus>>('status.refresh')
+      setStatus(data)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to refresh status.')
+    }
   }
 
   const exportLog = async () => {
@@ -64,7 +85,14 @@ export default function App() {
       defaultPath: `clawtty-session-${activeTab.name} -${new Date().toISOString().replace(/[:.]/g, '-')}.txt`,
       filters: [{ name: 'Text', extensions: ['txt'] }]
     })
-    if (path) await invoke('export_log', { path, content: text })
+    if (path) {
+      try {
+        setError(null)
+        await invoke('export_log', { path, content: text })
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to export log.')
+      }
+    }
   }
 
   const saveToken = async (profileId: string, token: string) => {
@@ -78,8 +106,13 @@ export default function App() {
   const onSendChat = async (tab: SessionTab, text: string) => {
     const msg: ChatMessage = { role: 'user', text, ts: new Date().toLocaleTimeString() }
     setChatMessages((m) => ({ ...m, [tab.id]: [...(m[tab.id] ?? []), msg] }))
-    const reply = await sidecar.call<ChatMessage>('session.ws_send', { profileId: tab.profileId, text })
-    setChatMessages((m) => ({ ...m, [tab.id]: [...(m[tab.id] ?? []), reply] }))
+    try {
+      setError(null)
+      const reply = await sidecar.call<ChatMessage>('session.ws_send', { profileId: tab.profileId, text })
+      setChatMessages((m) => ({ ...m, [tab.id]: [...(m[tab.id] ?? []), reply] }))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send message.')
+    }
   }
 
   useEffect(() => {
@@ -111,6 +144,11 @@ export default function App() {
       />
 
       <main className="flex-1 flex flex-col bg-ix-bg">
+        {error ? (
+          <div className="mx-3 mt-3 rounded-ix border border-ix-red bg-ix-red/15 px-3 py-2 text-sm text-red-200">
+            {error}
+          </div>
+        ) : null}
         {view === 'sessions' ? (
           <SessionsPage
             tabs={tabs}

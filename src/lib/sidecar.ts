@@ -1,7 +1,7 @@
 import { Command, Child } from '@tauri-apps/plugin-shell'
 import { dirname, resolveResource } from '@tauri-apps/api/path'
 
-type Pending = { resolve: (v: any) => void; reject: (e: Error) => void }
+type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void }
 
 class SidecarClient {
   private child: Child | null = null
@@ -9,6 +9,7 @@ class SidecarClient {
   private pending = new Map<number, Pending>()
   private buffer = ''
   private sidecarCwd: string | undefined
+  private static readonly CALL_TIMEOUT_MS = 15000
 
   private async resolveSidecarCwd(): Promise<string | undefined> {
     if (this.sidecarCwd !== undefined) return this.sidecarCwd
@@ -66,10 +67,25 @@ class SidecarClient {
     const id = ++this.requestId
     const payload = JSON.stringify({ id, method, params }) + '\n'
     const p = new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as any, reject })
+      this.pending.set(id, { resolve: (v) => resolve(v as T), reject })
     })
     await this.child.write(payload)
-    return p
+    return await new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`Sidecar call timed out: ${method}`))
+      }, SidecarClient.CALL_TIMEOUT_MS)
+      p.then(
+        (value) => {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        (err) => {
+          clearTimeout(timer)
+          reject(err)
+        }
+      )
+    })
   }
 }
 

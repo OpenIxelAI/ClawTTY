@@ -72,7 +72,8 @@ def method_session_ws_open(params):
         return [{"role": "system", "text": "Profile has no WebSocket URL configured", "ts": datetime.now().strftime("%H:%M:%S")}]
     token = _safe_load_token(p.get("id", ""))
     client = GatewayClient()
-    if not client.connect(ws_url, token):
+    if not client.connect(ws_url, token, auto_reconnect=False):
+        client.disconnect()
         return [{"role": "system", "text": f"Failed to connect to {ws_url}", "ts": datetime.now().strftime("%H:%M:%S")}]
     _ws_clients[p["id"]] = client
     return [{"role": "system", "text": f"Connected to {ws_url}", "ts": datetime.now().strftime("%H:%M:%S")}]
@@ -105,7 +106,7 @@ def method_status_refresh(_params):
             return pid, False
         token = _safe_load_token(pid)
         c = GatewayClient()
-        ok = c.connect(ws_url, token)
+        ok = c.connect(ws_url, token, auto_reconnect=False)
         if ok:
             c.disconnect()
         return pid, ok
@@ -113,7 +114,10 @@ def method_status_refresh(_params):
     with ThreadPoolExecutor(max_workers=max(1, min(8, len(profiles)))) as pool:
         futures = [pool.submit(_check_profile, p) for p in profiles]
         for f in as_completed(futures):
-            pid, online = f.result()
+            try:
+                pid, online = f.result()
+            except Exception:
+                continue
             if not pid:
                 continue
             if online:

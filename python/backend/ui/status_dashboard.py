@@ -131,7 +131,7 @@ class StatusDashboard(SafeGrabMixin, ctk.CTkToplevel):
 
         def _run() -> None:
             c = GatewayClient()
-            ok = c.connect(ws_url, token)
+            ok = c.connect(ws_url, token, auto_reconnect=False)
             c.disconnect()
             done["ok"] = ok
 

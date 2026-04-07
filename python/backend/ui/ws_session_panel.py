@@ -12,6 +12,7 @@ from __future__ import annotations
 import threading
 import time
 import tkinter as tk
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -27,6 +28,7 @@ from ..theme import (
 from ..ws_client import GatewayClient, ConnState
 from .. import audit
 
+_logger = logging.getLogger("clawtty.ws_session_panel")
 
 # ── State colors ─────────────────────────────────────────────────────────────
 
@@ -199,7 +201,9 @@ class WsSessionPanel(ctk.CTkFrame):
             return
 
         audit.log("WS_PANEL_CONNECT", name, url, "", "PENDING", "Initiating connection")
-        ok = self._client.connect(url, token)
+        # Safety-first default: one-shot connect only.
+        # Operator can explicitly click Reconnect for another attempt.
+        ok = self._client.connect(url, token, auto_reconnect=False)
 
         if ok:
             self.after(0, self._post_connect)
@@ -234,9 +238,7 @@ class WsSessionPanel(ctk.CTkFrame):
         self.after(0, lambda s=state: self._update_state_ui(s))
 
     def _update_state_ui(self, state: ConnState) -> None:
-        import traceback as _tb
-        caller = _tb.extract_stack()[-2]
-        print(f"[DOT] → {state.value}  ({caller.filename.split('/')[-1]}:{caller.lineno})")
+        _logger.debug("UI state dot -> %s", state.value)
         color = _STATE_COLORS.get(state, C("dim"))
         label = _STATE_LABELS.get(state, str(state.value))
 
@@ -333,15 +335,19 @@ class WsSessionPanel(ctk.CTkFrame):
         try:
             self.after(0, lambda p=payload: self._safe_handle_chat(p))
         except Exception as exc:
-            print(f"[WS_CHAT] error in chat.message handler: {exc}")
+            _logger.warning("chat.message handler scheduling failed: %s", exc)
 
     def _on_chat_event(self, payload: dict) -> None:
         """Handle generic 'chat' events."""
         try:
-            print(f"[WS_CHAT] event: role={payload.get('role','?')} keys={list(payload.keys()) if isinstance(payload, dict) else '?'}")
+            _logger.debug(
+                "chat event: role=%s keys=%s",
+                payload.get("role", "?"),
+                list(payload.keys()) if isinstance(payload, dict) else "?",
+            )
             self.after(0, lambda p=payload: self._safe_handle_chat(p))
         except Exception as exc:
-            print(f"[WS_CHAT] error in chat handler: {exc}")
+            _logger.warning("chat handler scheduling failed: %s", exc)
 
     def _on_agent_event(self, payload: dict) -> None:
         """Handle 'agent' events — skip streaming, let chat handle full messages."""
@@ -361,18 +367,20 @@ class WsSessionPanel(ctk.CTkFrame):
                         val = payload[key]
                         preview = str(val)[:80] if val else ""
                         break
-            print(f"[WS_EVENT] {event_name}: {preview or (list(payload.keys()) if isinstance(payload, dict) else '?')}")
+            _logger.debug(
+                "ws event: %s: %s",
+                event_name,
+                preview or (list(payload.keys()) if isinstance(payload, dict) else "?"),
+            )
         except Exception as exc:
-            print(f"[WS_EVENT] error in catch-all: {exc}")
+            _logger.debug("catch-all event logging failed: %s", exc)
 
     def _safe_handle_chat(self, payload: dict) -> None:
         """Crash-safe wrapper for _handle_chat_message."""
         try:
             self._handle_chat_message(payload)
         except Exception as exc:
-            print(f"[WS_CHAT] CRASH in handler: {exc}")
-            import traceback
-            traceback.print_exc()
+            _logger.exception("chat handler crashed: %s", exc)
 
     def _handle_chat_message(self, payload: dict) -> None:
         if not isinstance(payload, dict):
@@ -417,7 +425,7 @@ class WsSessionPanel(ctk.CTkFrame):
             return
 
         text = text.strip()
-        print(f"[WS_CHAT] showing: {text[:80]}{'...' if len(text) > 80 else ''}")
+        _logger.debug("showing agent chat text (%d chars)", len(text))
         self._show_agent_message(text)
 
     def _extract_text(self, content) -> str:

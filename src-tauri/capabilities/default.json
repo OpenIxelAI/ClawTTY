@@ -6,16 +6,6 @@
   "permissions": [
     "core:default",
     {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "python3",
-          "cmd": "python3",
-          "args": ["python/sidecar.py"]
-        }
-      ]
-    },
-    {
       "identifier": "shell:allow-spawn",
       "allow": [
         {
@@ -25,8 +15,17 @@
         }
       ]
     },
+    {
+      "identifier": "shell:allow-stdin-write",
+      "allow": [
+        {
+          "name": "python3",
+          "cmd": "python3",
+          "args": ["python/sidecar.py"]
+        }
+      ]
+    },
     "shell:allow-kill",
-    "shell:allow-open",
     "dialog:allow-save"
   ]
 }
