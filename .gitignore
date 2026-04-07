@@ -1,0 +1,49 @@
+# Node
+node_modules/
+.node_modules/
+
+# Tauri/Rust build output
+target/
+src-tauri/target/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Logs & audit trails (stay local, never committed)
+*.log
+logs/
+
+# User config & profiles (stored in ~/.config/clawtty/ — not here)
+settings.json
+profiles.json
+profiles.local.json
+
+# Secrets & keys (should never be in the repo)
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+secrets.*
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+Cargo.lock
