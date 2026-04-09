@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/ixel-logo.png" alt="Ixel" width="280">
+</p>
+
 # 🦞 ClawTTY — Universal AI Agent Console
 
 > The SSH launcher built for the age of AI agents.
